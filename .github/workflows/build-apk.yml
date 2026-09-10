@@ -14,19 +14,36 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout builder repository
+      - name: Checkout Android builder repository
         uses: actions/checkout@v4
 
-      - name: Checkout validated Monitor source
+      - name: Checkout v4.1.0 Android baseline
         uses: actions/checkout@v4
         with:
           repository: RODRIGODESS/monitor-de-noticias-apk
-          ref: b131711f1f2d368a9d3dc59d6d211e9680ac7c8f
+          ref: 5c7c78c88cc9c5111232d7765574dbdc739ad16b
           path: source
 
-      - name: Keep only Android module in this build
+      - name: Keep only Android module
         shell: bash
         run: sed -i '/include(":desktop")/d' source/settings.gradle.kts
+
+      - name: Synchronize final Windows terms and sources
+        shell: bash
+        run: python3 tools/sync_windows_changes.py source
+
+      - name: Validate synchronized catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 411' source/app/build.gradle.kts
+          grep -q '"STM"' source/app/src/main/java/br/com/monitordenoticias/android/NewsDb.kt
+          grep -q '"ENGEPRON"' source/app/src/main/java/br/com/monitordenoticias/android/NewsDb.kt
+          grep -q 'Poder Aéreo' source/app/src/main/java/br/com/monitordenoticias/android/SourceCatalog.kt
+          grep -q 'GBN News' source/app/src/main/java/br/com/monitordenoticias/android/SourceCatalog.kt
+          grep -q 'A Tribuna' source/app/src/main/java/br/com/monitordenoticias/android/SourceCatalog.kt
+          grep -q 'youtube-g1' source/app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt
+          grep -q 'video-r7-domingo-espetacular' source/app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -53,35 +70,37 @@ jobs:
       - name: Prepare APK and checksum
         shell: bash
         run: |
-          cp source/app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v4.0.2-debug.apk
-          sha256sum monitor-de-noticias-v4.0.2-debug.apk | tee monitor-de-noticias-v4.0.2-debug.apk.sha256
+          cp source/app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v4.1.1-windows-sync-debug.apk
+          sha256sum monitor-de-noticias-v4.1.1-windows-sync-debug.apk | tee monitor-de-noticias-v4.1.1-windows-sync-debug.apk.sha256
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: monitor-de-noticias-v4.0.2-debug-apk
+          name: monitor-de-noticias-v4.1.1-windows-sync-debug-apk
           path: |
-            monitor-de-noticias-v4.0.2-debug.apk
-            monitor-de-noticias-v4.0.2-debug.apk.sha256
+            monitor-de-noticias-v4.1.1-windows-sync-debug.apk
+            monitor-de-noticias-v4.1.1-windows-sync-debug.apk.sha256
           if-no-files-found: error
 
-      - name: Publish/update test prerelease
+      - name: Publish/update synchronized test prerelease
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="android-v4.0.2-debug"
+          tag="android-v4.1.1-windows-sync-debug"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -f "$tag" "$GITHUB_SHA"
           git push --force origin "refs/tags/$tag"
+          notes="Android v4.1.1 sincronizado com as alterações finais da versão Windows: termos adicionais, fontes especializadas (incluindo Poder Aéreo e GBN News), Tecnodefesa, A Tribuna/SP, quinto veículo por UF, g1 no YouTube e regras v4.1.0 preservadas. Build DEBUG para teste."
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" monitor-de-noticias-v4.0.2-debug.apk monitor-de-noticias-v4.0.2-debug.apk.sha256 --clobber
+            gh release upload "$tag" monitor-de-noticias-v4.1.1-windows-sync-debug.apk monitor-de-noticias-v4.1.1-windows-sync-debug.apk.sha256 --clobber
+            gh release edit "$tag" --title "Monitor de Notícias Android v4.1.1 — Windows Sync" --notes "$notes" --prerelease
           else
-            gh release create "$tag" monitor-de-noticias-v4.0.2-debug.apk monitor-de-noticias-v4.0.2-debug.apk.sha256 \
-              --title "Monitor de Notícias Android v4.0.2 — APK de teste" \
-              --notes "APK Android instalável compilado a partir do código do pacote Windows Portable v4.0.2 validado (commit fonte b131711f1f2d368a9d3dc59d6d211e9680ac7c8f). Build DEBUG para teste; não substitui uma release assinada com a chave permanente." \
+            gh release create "$tag" monitor-de-noticias-v4.1.1-windows-sync-debug.apk monitor-de-noticias-v4.1.1-windows-sync-debug.apk.sha256 \
+              --title "Monitor de Notícias Android v4.1.1 — Windows Sync" \
+              --notes "$notes" \
               --prerelease
           fi
