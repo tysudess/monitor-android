@@ -1,0 +1,87 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout builder repository
+        uses: actions/checkout@v4
+
+      - name: Checkout validated Monitor source
+        uses: actions/checkout@v4
+        with:
+          repository: RODRIGODESS/monitor-de-noticias-apk
+          ref: b131711f1f2d368a9d3dc59d6d211e9680ac7c8f
+          path: source
+
+      - name: Keep only Android module in this build
+        shell: bash
+        run: sed -i '/include(":desktop")/d' source/settings.gradle.kts
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35 SDK
+        shell: bash
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build installable debug APK
+        working-directory: source
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+
+      - name: Prepare APK and checksum
+        shell: bash
+        run: |
+          cp source/app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v4.0.2-debug.apk
+          sha256sum monitor-de-noticias-v4.0.2-debug.apk | tee monitor-de-noticias-v4.0.2-debug.apk.sha256
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-de-noticias-v4.0.2-debug-apk
+          path: |
+            monitor-de-noticias-v4.0.2-debug.apk
+            monitor-de-noticias-v4.0.2-debug.apk.sha256
+          if-no-files-found: error
+
+      - name: Publish/update test prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="android-v4.0.2-debug"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$tag" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$tag"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" monitor-de-noticias-v4.0.2-debug.apk monitor-de-noticias-v4.0.2-debug.apk.sha256 --clobber
+          else
+            gh release create "$tag" monitor-de-noticias-v4.0.2-debug.apk monitor-de-noticias-v4.0.2-debug.apk.sha256 \
+              --title "Monitor de Notícias Android v4.0.2 — APK de teste" \
+              --notes "APK Android instalável compilado a partir do código do pacote Windows Portable v4.0.2 validado (commit fonte b131711f1f2d368a9d3dc59d6d211e9680ac7c8f). Build DEBUG para teste; não substitui uma release assinada com a chave permanente." \
+              --prerelease
+          fi
