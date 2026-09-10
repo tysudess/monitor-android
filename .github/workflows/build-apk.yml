@@ -32,18 +32,29 @@ jobs:
         shell: bash
         run: python3 tools/sync_windows_changes.py source
 
+      - name: Apply verified YouTube corrections
+        shell: bash
+        run: python3 tools/youtube_v412_patch.py source
+
       - name: Validate synchronized catalog
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 411' source/app/build.gradle.kts
+          grep -q 'versionCode = 412' source/app/build.gradle.kts
           grep -q '"STM"' source/app/src/main/java/br/com/monitordenoticias/android/NewsDb.kt
           grep -q '"ENGEPRON"' source/app/src/main/java/br/com/monitordenoticias/android/NewsDb.kt
           grep -q 'Poder Aéreo' source/app/src/main/java/br/com/monitordenoticias/android/SourceCatalog.kt
           grep -q 'GBN News' source/app/src/main/java/br/com/monitordenoticias/android/SourceCatalog.kt
           grep -q 'A Tribuna' source/app/src/main/java/br/com/monitordenoticias/android/SourceCatalog.kt
-          grep -q 'youtube-g1' source/app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt
-          grep -q 'video-r7-domingo-espetacular' source/app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt
+          grep -q 'UCaGmdJSSiR7fkh2A-c6emsA' source/app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt
+          grep -q 'youtube-domingo-espetacular' source/app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt
+          grep -q '@domingoespetacular' source/app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt
+          grep -q 'KEY_YOUTUBE_412_MIGRATED' source/app/src/main/java/br/com/monitordenoticias/android/VideoViewModel.kt
+          grep -q 'identifier.startsWith("UC")' source/app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
+
+      - name: Verify all official YouTube video tabs live
+        shell: bash
+        run: python3 tools/verify_youtube_routes.py
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -70,37 +81,37 @@ jobs:
       - name: Prepare APK and checksum
         shell: bash
         run: |
-          cp source/app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v4.1.1-windows-sync-debug.apk
-          sha256sum monitor-de-noticias-v4.1.1-windows-sync-debug.apk | tee monitor-de-noticias-v4.1.1-windows-sync-debug.apk.sha256
+          cp source/app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v4.1.2-youtube-verified-debug.apk
+          sha256sum monitor-de-noticias-v4.1.2-youtube-verified-debug.apk | tee monitor-de-noticias-v4.1.2-youtube-verified-debug.apk.sha256
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: monitor-de-noticias-v4.1.1-windows-sync-debug-apk
+          name: monitor-de-noticias-v4.1.2-youtube-verified-debug-apk
           path: |
-            monitor-de-noticias-v4.1.1-windows-sync-debug.apk
-            monitor-de-noticias-v4.1.1-windows-sync-debug.apk.sha256
+            monitor-de-noticias-v4.1.2-youtube-verified-debug.apk
+            monitor-de-noticias-v4.1.2-youtube-verified-debug.apk.sha256
           if-no-files-found: error
 
-      - name: Publish/update synchronized test prerelease
+      - name: Publish/update verified test prerelease
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="android-v4.1.1-windows-sync-debug"
+          tag="android-v4.1.2-youtube-verified-debug"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -f "$tag" "$GITHUB_SHA"
           git push --force origin "refs/tags/$tag"
-          notes="Android v4.1.1 sincronizado com as alterações finais da versão Windows: termos adicionais, fontes especializadas (incluindo Poder Aéreo e GBN News), Tecnodefesa, A Tribuna/SP, quinto veículo por UF, g1 no YouTube e regras v4.1.0 preservadas. Build DEBUG para teste."
+          notes="Android v4.1.2: mantém a sincronização Windows e corrige/valida todas as fontes oficiais do YouTube. g1 usa o channel ID oficial UCaGmdJSSiR7fkh2A-c6emsA; Domingo Espetacular usa @domingoespetacular; CNN Brasil, Jovem Pan News, GloboNews, Record News, Jornal da Record, Band Jornalismo e SBT News também são validados diretamente na aba /videos antes do assembleDebug."
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" monitor-de-noticias-v4.1.1-windows-sync-debug.apk monitor-de-noticias-v4.1.1-windows-sync-debug.apk.sha256 --clobber
-            gh release edit "$tag" --title "Monitor de Notícias Android v4.1.1 — Windows Sync" --notes "$notes" --prerelease
+            gh release upload "$tag" monitor-de-noticias-v4.1.2-youtube-verified-debug.apk monitor-de-noticias-v4.1.2-youtube-verified-debug.apk.sha256 --clobber
+            gh release edit "$tag" --title "Monitor de Notícias Android v4.1.2 — YouTube verificado" --notes "$notes" --prerelease
           else
-            gh release create "$tag" monitor-de-noticias-v4.1.1-windows-sync-debug.apk monitor-de-noticias-v4.1.1-windows-sync-debug.apk.sha256 \
-              --title "Monitor de Notícias Android v4.1.1 — Windows Sync" \
+            gh release create "$tag" monitor-de-noticias-v4.1.2-youtube-verified-debug.apk monitor-de-noticias-v4.1.2-youtube-verified-debug.apk.sha256 \
+              --title "Monitor de Notícias Android v4.1.2 — YouTube verificado" \
               --notes "$notes" \
               --prerelease
           fi
